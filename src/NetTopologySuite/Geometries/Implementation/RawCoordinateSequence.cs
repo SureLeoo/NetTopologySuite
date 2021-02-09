@@ -54,9 +54,11 @@ namespace NetTopologySuite.Geometries.Implementation
 
         private RawCoordinateSequence(SerializationInfo info, StreamingContext context)
             : this(
-                Array.ConvertAll((double[][])info.GetValue("rawData", typeof(double[][])), arr => arr.AsMemory()),
-                ((int RawDataIndex, int DimensionIndex)[])info.GetValue("dimensionMap", typeof((int RawDataIndex, int DimensionIndex)[])),
-                info.GetInt32("measures"))
+                info.GetInt32("count"),
+                info.GetInt32("dimension"),
+                info.GetInt32("measures"),
+                Array.ConvertAll(((double[] Array, int DimensionCount)[])info.GetValue("rawData", typeof((double[] Array, int DimensionCount)[])), tup => (tup.Array.AsMemory(), tup.DimensionCount)),
+                ((int RawDataIndex, int DimensionIndex)[])info.GetValue("dimensionMap", typeof((int RawDataIndex, int DimensionIndex)[])))
         {
         }
 
@@ -218,9 +220,11 @@ namespace NetTopologySuite.Geometries.Implementation
 
         void ISerializable.GetObjectData(SerializationInfo info, StreamingContext context)
         {
-            info.AddValue("rawData", Array.ConvertAll(_rawData, tup => tup.Array.ToArray()));
-            info.AddValue("dimensionMap", _dimensionMap);
+            info.AddValue("count", Count);
+            info.AddValue("dimension", Dimension);
             info.AddValue("measures", Measures);
+            info.AddValue("rawData", Array.ConvertAll(_rawData, tup => (tup.Array.ToArray(), tup.DimensionCount)));
+            info.AddValue("dimensionMap", _dimensionMap);
         }
 
         private static int GetCountIfValid(Memory<double>[] rawData, (int RawDataIndex, int DimensionIndex)[] dimensionMap)
