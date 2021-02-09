@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Serialization;
 
 namespace NetTopologySuite.Geometries.Implementation
 {
@@ -8,7 +9,8 @@ namespace NetTopologySuite.Geometries.Implementation
     /// An implementation of <see cref="CoordinateSequence"/> that packs its contents in a way that
     /// can be customized by the creator.
     /// </summary>
-    public sealed class RawCoordinateSequence : CoordinateSequence
+    [Serializable]
+    public sealed class RawCoordinateSequence : CoordinateSequence, ISerializable
     {
         private readonly (Memory<double> Array, int DimensionCount)[] _rawData;
 
@@ -28,13 +30,16 @@ namespace NetTopologySuite.Geometries.Implementation
         /// The value for <see cref="CoordinateSequence.Measures"/>.
         /// </param>
         public RawCoordinateSequence(Memory<double>[] rawData, (int RawDataIndex, int DimensionIndex)[] dimensionMap, int measures)
-            : base(GetCountIfValid(rawData, dimensionMap), GetDimensionIfValid(rawData, dimensionMap), measures)
+            : base(GetCountIfValid(rawData, dimensionMap), dimensionMap.Length, measures)
         {
             _rawData = new (Memory<double> Array, int DimensionCount)[rawData.Length];
             for (int i = 0; i < rawData.Length; i++)
             {
                 _rawData[i].Array = rawData[i];
-                _rawData[i].DimensionCount = rawData[i].Length / Count;
+                if (Count != 0)
+                {
+                    _rawData[i].DimensionCount = rawData[i].Length / Count;
+                }
             }
 
             _dimensionMap = dimensionMap;
@@ -45,6 +50,14 @@ namespace NetTopologySuite.Geometries.Implementation
         {
             _rawData = rawData;
             _dimensionMap = dimensionMap;
+        }
+
+        private RawCoordinateSequence(SerializationInfo info, StreamingContext context)
+            : this(
+                Array.ConvertAll((double[][])info.GetValue("rawData", typeof(double[][])), arr => arr.AsMemory()),
+                ((int RawDataIndex, int DimensionIndex)[])info.GetValue("dimensionMap", typeof((int RawDataIndex, int DimensionIndex)[])),
+                info.GetInt32("measures"))
+        {
         }
 
         /// <summary>
@@ -203,6 +216,13 @@ namespace NetTopologySuite.Geometries.Implementation
             return result;
         }
 
+        void ISerializable.GetObjectData(SerializationInfo info, StreamingContext context)
+        {
+            info.AddValue("rawData", Array.ConvertAll(_rawData, tup => tup.Array.ToArray()));
+            info.AddValue("dimensionMap", _dimensionMap);
+            info.AddValue("measures", Measures);
+        }
+
         private static int GetCountIfValid(Memory<double>[] rawData, (int RawDataIndex, int DimensionIndex)[] dimensionMap)
         {
             if (rawData is null)
@@ -222,38 +242,22 @@ namespace NetTopologySuite.Geometries.Implementation
                 return 0;
             }
 
-            int? inferredCount = null;
+            int valueCount = 0;
             foreach (var array in rawData)
             {
-                int currentInferredCount = Math.DivRem(array.Length, dimensionCount, out int remainder);
-                if (remainder != 0)
-                {
-                    throw new ArgumentException("Arrays must all have exactly enough room for all their elements.", nameof(rawData));
-                }
-
-                if (inferredCount is int prevInferredCount)
-                {
-                    if (prevInferredCount != currentInferredCount)
-                    {
-                        throw new ArgumentException("All arrays must have the same count.", nameof(rawData));
-                    }
-                }
-                else
-                {
-                    inferredCount = currentInferredCount;
-                }
+                valueCount += array.Length;
             }
 
-            return inferredCount.GetValueOrDefault();
-        }
-
-        private static int GetDimensionIfValid(Memory<double>[] rawData, (int RawDataIndex, int DimensionIndex)[] dimensionMap)
-        {
-            int dimensionCount = dimensionMap.Length;
-
-            if (rawData.Length == 0)
+            int count = Math.DivRem(valueCount, dimensionCount, out int remainder);
+            if (remainder != 0)
             {
-                return dimensionMap.Length;
+                throw new ArgumentException("The sum of all array sizes must be an even multiple of the number of dimensions.");
+            }
+
+            if (count == 0)
+            {
+                ValidateEmpty(rawData, dimensionMap);
+                return count;
             }
 
             Span<int> scratchIntBuffer = stackalloc int[0];
@@ -274,7 +278,7 @@ namespace NetTopologySuite.Geometries.Implementation
             for (int i = 0; i < rawData.Length; i++)
             {
                 dimensionsBefore[i] = dimensionsSoFar;
-                dimensionsSoFar += dimensionsIn[i] = rawData[i].Length / dimensionCount;
+                dimensionsSoFar += dimensionsIn[i] = rawData[i].Length / count;
             }
 
             if (dimensionsSoFar != dimensionCount)
@@ -322,7 +326,61 @@ namespace NetTopologySuite.Geometries.Implementation
                 }
             }
 
-            return dimensionCount;
+            return count;
+        }
+
+        private static void ValidateEmpty(Memory<double>[] rawData, (int RawDataIndex, int DimensionIndex)[] dimensionMap)
+        {
+            int dimensionCount = dimensionMap.Length;
+
+            Span<bool> slotUsed = stackalloc bool[0];
+            if (rawData.Length * dimensionCount < 400)
+            {
+                slotUsed = stackalloc bool[rawData.Length * dimensionCount];
+                slotUsed.Clear();
+            }
+            else
+            {
+                slotUsed = new bool[rawData.Length * dimensionCount];
+            }
+
+            foreach ((int rawDataIndex, int dimensionIndex) in dimensionMap)
+            {
+                if ((uint)rawDataIndex >= (uint)rawData.Length)
+                {
+                    throw new ArgumentException("Raw data index in dimension map must be less than the length of raw data.");
+                }
+
+                int slotIndex = (rawDataIndex * dimensionCount) + dimensionIndex;
+                if (slotUsed[slotIndex])
+                {
+                    throw new ArgumentException("Dimension map contains duplicate values.", nameof(dimensionMap));
+                }
+
+                slotUsed[slotIndex] = true;
+            }
+
+            int inferredDimensionCount = 0;
+            for (int i = 0; i < rawData.Length; i++)
+            {
+                int baseSlot = dimensionCount * i;
+                for (int j = 0; j < dimensionCount; j++)
+                {
+                    if (slotUsed[baseSlot + j])
+                    {
+                        ++inferredDimensionCount;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (inferredDimensionCount != dimensionCount)
+            {
+                throw new ArgumentException("Dimension map does not cover all slots in raw data.");
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
