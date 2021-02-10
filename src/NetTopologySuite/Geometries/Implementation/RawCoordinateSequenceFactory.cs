@@ -78,7 +78,7 @@ namespace NetTopologySuite.Geometries.Implementation
             {
                 if (i <= 16)
                 {
-                    var flag = (Ordinates)(1 << i);
+                    var flag = (Ordinates)((int)Ordinates.Spatial1 << i);
                     ordinatesInResult |= flag;
                     if ((ordinatesInGroups & flag) != Ordinates.None)
                     {
@@ -95,7 +95,7 @@ namespace NetTopologySuite.Geometries.Implementation
             {
                 if (i <= 16)
                 {
-                    var flag = (Ordinates)((int)Ordinate.Measure1 << i);
+                    var flag = (Ordinates)((int)Ordinates.Measure1 << i);
                     ordinatesInResult |= flag;
                     if ((ordinatesInGroups & flag) != Ordinates.None)
                     {
@@ -108,7 +108,7 @@ namespace NetTopologySuite.Geometries.Implementation
                 remainingRawData = remainingRawData.Slice(size);
             }
 
-            if (remainingRawData.IsEmpty)
+            if ((ordinatesInResult & ordinatesInGroups) == Ordinates.None)
             {
                 return new RawCoordinateSequence(rawDataList.ToArray(), dimensionMap, measures);
             }
@@ -124,7 +124,7 @@ namespace NetTopologySuite.Geometries.Implementation
                 int dimCountForGroup = 0;
                 for (int i = 0; i < spatial && i < 16; i++)
                 {
-                    if ((ordinateGroup & (Ordinates)(1 << i)) == Ordinates.None)
+                    if ((ordinateGroup & (Ordinates)((int)Ordinates.Spatial1 << i)) == Ordinates.None)
                     {
                         continue;
                     }
@@ -135,7 +135,7 @@ namespace NetTopologySuite.Geometries.Implementation
 
                 for (int i = 0; i < measures && i < 16; i++)
                 {
-                    if ((ordinateGroup & (Ordinates)((int)Ordinate.Measure1 << i)) == Ordinates.None)
+                    if ((ordinateGroup & (Ordinates)((int)Ordinates.Measure1 << i)) == Ordinates.None)
                     {
                         continue;
                     }
