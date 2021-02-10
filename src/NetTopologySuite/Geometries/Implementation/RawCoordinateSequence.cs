@@ -151,6 +151,7 @@ namespace NetTopologySuite.Geometries.Implementation
             return env;
         }
 
+        /// <inheritdoc />
         public override Coordinate[] ToCoordinateArray()
         {
             var raw = new (ReadOnlyMemory<double> Memory, int Stride)[Dimension];
