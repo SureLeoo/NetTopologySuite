@@ -154,6 +154,11 @@ namespace NetTopologySuite.Geometries.Implementation
         /// <inheritdoc />
         public override Coordinate[] ToCoordinateArray()
         {
+            if (this.Count == 0)
+            {
+                return Array.Empty<Coordinate>();
+            }
+
             var raw = new (ReadOnlyMemory<double> Memory, int Stride)[Dimension];
             var rawArrays = new (double[] Array, int Offset, int Stride)[Dimension];
             for (int i = 0; i < raw.Length; i++)
@@ -199,18 +204,28 @@ namespace NetTopologySuite.Geometries.Implementation
                 var ys = raw[1].Memory.Span;
                 int strideY = raw[1].Stride;
 
-                for (int i = 0; i < result.Length; i++)
+                int i = 0;
+                while (true)
                 {
                     var coord = result[i] = CreateCoordinate();
                     coord.X = xs[0];
-                    xs = xs.Slice(strideX);
                     coord.Y = ys[0];
-                    ys = ys.Slice(strideY);
 
                     for (int j = 2; j < raw.Length; j++)
                     {
+                        coord[j] = raw[j].Memory.Span[0];
+                    }
+
+                    if (++i == result.Length)
+                    {
+                        break;
+                    }
+
+                    xs = xs.Slice(strideX);
+                    ys = ys.Slice(strideY);
+                    for (int j = 2; j < raw.Length; j++)
+                    {
                         ref var nxt = ref raw[j];
-                        coord[j] = nxt.Memory.Span[0];
                         nxt.Memory = nxt.Memory.Slice(nxt.Stride);
                     }
                 }
